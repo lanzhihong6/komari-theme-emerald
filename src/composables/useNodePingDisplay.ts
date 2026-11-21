@@ -1,5 +1,5 @@
 import type { MaybeRefOrGetter } from 'vue'
-import type { NodePingPerTaskStat } from '@/composables/useNodePingStats'
+import type { NodePingHistoryPoint, NodePingPerTaskStat } from '@/composables/useNodePingStats'
 import { computed, toValue } from 'vue'
 import { NODE_PING_BAR_COUNT, useNodePingStats } from '@/composables/useNodePingStats'
 import { useAppStore } from '@/stores/app'
@@ -10,8 +10,8 @@ export type NodePingMetric = 'latency' | 'loss'
 // getRecords 在新版主控中返回的是近期可用样本，不保证覆盖完整 1 小时。
 const RECENT_PING_RECORDS_QUERY_HOURS = 1
 
-// 三网延迟固定展示的记录数量
-const PING_NETWORK_DISPLAY_COUNT = 3
+// 三网延迟固定展示的记录数量（本地改版：3 → 6，北京三网 + 重庆三网）
+const PING_NETWORK_DISPLAY_COUNT = 6
 
 export interface NodePingBar {
   key: string
@@ -23,6 +23,8 @@ interface NodePingNetworkDisplay {
   name: string
   latency: string
   toneClass: string
+  latencyBars: NodePingBar[]
+  lossBars: NodePingBar[]
 }
 
 interface UseNodePingDisplayOptions {
@@ -71,11 +73,43 @@ function getLossToneClass(loss: number): string {
   return 'bg-rose-500/80'
 }
 
+function buildBarsFromPoints(points: NodePingHistoryPoint[], metric: NodePingMetric, name?: string): NodePingBar[] {
+  const prefix = name ? `${name}\n` : ''
+  return points.map((point, index) => {
+    const value = point[metric]
+
+    return {
+      key: `${point.time}-${index}`,
+      className: value === null
+        ? 'bg-muted-foreground/15'
+        : metric === 'latency'
+          ? getLatencyToneClass(value)
+          : getLossToneClass(value),
+      tooltip: value === null
+        ? `${prefix}${formatDateTime(point.time, 'HH:mm:ss')} N/A`
+        : metric === 'latency'
+          ? `${prefix}${formatDateTime(point.time, 'HH:mm:ss')}\n${Math.round(value)} ms`
+          : `${prefix}${formatDateTime(point.time, 'HH:mm:ss')}\n${value.toFixed(1)}%`,
+    }
+  })
+}
+
+function buildTaskEmptyBars(metric: NodePingMetric, name: string): NodePingBar[] {
+  return Array.from({ length: NODE_PING_BAR_COUNT }, (_, index) => ({
+    key: `${metric}-task-empty-${index}`,
+    className: 'bg-muted-foreground/10',
+    tooltip: `${name}\nN/A`,
+  }))
+}
+
 function toNetworkDisplay(stat: NodePingPerTaskStat): NodePingNetworkDisplay {
+  const history = stat.history ?? []
   return {
     name: stat.name,
     latency: stat.avgLatency >= 0 ? `${Math.round(stat.avgLatency)}ms` : '--',
     toneClass: stat.avgLatency >= 0 ? getPingToneClass(stat.avgLatency) : 'text-rose-500',
+    latencyBars: history.length ? buildBarsFromPoints(history, 'latency', stat.name) : buildTaskEmptyBars('latency', stat.name),
+    lossBars: history.length ? buildBarsFromPoints(history, 'loss', stat.name) : buildTaskEmptyBars('loss', stat.name),
   }
 }
 
@@ -102,23 +136,7 @@ export function useNodePingDisplay(
     if (!points.length)
       return []
 
-    return points.map((point, index) => {
-      const value = point[metric]
-
-      return {
-        key: `${point.time}-${index}`,
-        className: value === null
-          ? 'bg-muted-foreground/15'
-          : metric === 'latency'
-            ? getLatencyToneClass(value)
-            : getLossToneClass(value),
-        tooltip: value === null
-          ? `${formatDateTime(point.time, 'HH:mm:ss')} N/A`
-          : metric === 'latency'
-            ? `${formatDateTime(point.time, 'HH:mm:ss')}\n${Math.round(value)} ms`
-            : `${formatDateTime(point.time, 'HH:mm:ss')}\n${value.toFixed(1)}%`,
-      }
-    })
+    return buildBarsFromPoints(points, metric)
   }
 
   function buildEmptyPingBars(metric: NodePingMetric): NodePingBar[] {
@@ -186,7 +204,7 @@ export function useNodePingDisplay(
     const perTaskStats = pingStats.perTaskStats.value
     const configuredNames = appStore.pingNetworkOrder
 
-    // 未配置自定义顺序时保持默认行为：按 taskId 顺序取前 3 条
+    // 未配置自定义顺序时保持默认行为：按 taskId 顺序取前 6 条
     if (!configuredNames.length)
       return perTaskStats.slice(0, PING_NETWORK_DISPLAY_COUNT).map(toNetworkDisplay)
 
@@ -194,7 +212,7 @@ export function useNodePingDisplay(
     const selected: NodePingPerTaskStat[] = []
     const usedTaskIds = new Set<number>()
 
-    // 按配置顺序精确匹配节点名称，最多取 3 条
+    // 按配置顺序精确匹配节点名称，最多取 6 条
     for (const name of configuredNames) {
       if (selected.length >= PING_NETWORK_DISPLAY_COUNT)
         break
@@ -205,7 +223,7 @@ export function useNodePingDisplay(
       }
     }
 
-    // 不足 3 条时用剩余任务（taskId 升序）补位
+    // 不足 6 条时用剩余任务（taskId 升序）补位
     for (const stat of perTaskStats) {
       if (selected.length >= PING_NETWORK_DISPLAY_COUNT)
         break

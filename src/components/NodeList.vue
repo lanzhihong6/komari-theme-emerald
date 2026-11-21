@@ -43,13 +43,13 @@ const columns: ColumnConfig[] = [
   { key: 'status', label: '状态', width: '40px', sortable: true },
   { key: 'os', label: '系统', width: '40px', sortable: true },
   { key: 'name', label: '节点', width: 'minmax(160px, 1fr)', sortable: true },
-  { key: 'tags', label: '标签', width: 'minmax(180px, 1fr)', sortable: false },
+  { key: 'tags', label: '标签', width: 'minmax(48px, 0.2fr)', sortable: false },
   { key: 'cpu', label: 'CPU', width: '100px', sortable: true },
   { key: 'mem', label: '内存', width: '100px', sortable: true },
   { key: 'disk', label: '硬盘', width: '100px', sortable: true },
   { key: 'traffic', label: '流量', width: '100px', sortable: true },
   { key: 'rate', label: '速率', width: '80px', sortable: true },
-  { key: 'networks', label: '三网', width: '136px', sortable: false },
+  { key: 'networks', label: '三网', width: 'minmax(320px, 1.2fr)', sortable: false },
 ]
 
 const sortKey = ref<string>('')
